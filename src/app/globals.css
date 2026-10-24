@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, serif;
+  --color-ink: #17241e;
+  --color-pine: #1b654c;
+  --color-pine-dark: #124836;
+  --color-moss: #e6f2eb;
+  --color-paper: #f3f0e8;
+  --color-card: #fffdf8;
+  --color-line: #e2dbd0;
+  --color-gold: #8a6828;
+  --color-danger: #8d3530;
+  --color-muted: #5c6a62;
+
+  /* Caregiver schedule: visit status colors */
+  --color-visit-scheduled: #2f6b9a;
+  --color-visit-progress: #b8832e;
+  --color-visit-completed: #1b654c;
+  --color-visit-missed: #b4532a;
+  --color-visit-cancelled: #8c938f;
+
+  /* Caregiver schedule: calendar shading */
+  --color-availability: #eaf4ee;
+  --color-timeoff: #cfc6b6;
+  --color-load-low: #e6f2eb;
+  --color-load-mid: #f6e7b8;
+  --color-load-high: #f2cfc6;
+}
+
+/* Diagonal hatching for time-off blocks and cells. */
+.hatched {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--color-timeoff) 70%, transparent) 0 6px,
+    transparent 6px 12px
+  );
+}
+
+html {
+  background: var(--color-paper);
+}
+
+body {
+  min-height: 100vh;
+  color: var(--color-ink);
+  background:
+    radial-gradient(circle at top left, rgba(27, 101, 76, 0.08), transparent 32rem),
+    var(--color-paper);
+}
+
+::selection {
+  background: #d5eadf;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
