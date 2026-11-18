@@ -4,6 +4,7 @@ import {
   dietConfirmed,
   extractCarePlanId,
   extractId,
+  parseAccountDeletionRequestPage,
   parseAppointmentDetail,
   parseAppointmentPage,
   parseAppointmentTypes,
@@ -36,6 +37,8 @@ import {
 } from "@/lib/api/parse";
 import { clearSession, getRefreshToken, saveSession } from "@/lib/api/session";
 import type {
+  AccountDeletionRequest,
+  AccountDeletionStatus,
   AppointmentDetail,
   AppointmentListItem,
   AppointmentTypeOption,
@@ -734,4 +737,26 @@ export async function listVisitReportDocument(input: VisitReportRequest): Promis
     rows.push(...current.rows);
   }
   return { ...first, rows };
+}
+
+export const ACCOUNT_DELETION_PAGE_SIZE = 50;
+
+export async function listAccountDeletionRequests(
+  status: AccountDeletionStatus,
+): Promise<AccountDeletionRequest[]> {
+  return collectPages((page) =>
+    apiRequest("/account-deletion-requests", {
+      query: { status, page, pageSize: ACCOUNT_DELETION_PAGE_SIZE },
+    }).then(parseAccountDeletionRequestPage),
+  );
+}
+
+/** Keeps the account deactivated (inactive). */
+export async function approveAccountDeletionRequest(id: string): Promise<void> {
+  await apiRequest(`/account-deletion-requests/${encodeURIComponent(id)}/approve`, { method: "POST" });
+}
+
+/** Restores the account so the user can sign in again. */
+export async function rejectAccountDeletionRequest(id: string): Promise<void> {
+  await apiRequest(`/account-deletion-requests/${encodeURIComponent(id)}/reject`, { method: "POST" });
 }

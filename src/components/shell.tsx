@@ -15,6 +15,7 @@ const links = [
   { href: "/appointments", label: "Appointments" },
   { href: "/doctor-appointments", label: "Doctor appointments" },
   { href: "/caregivers", label: "Caregivers" },
+  { href: "/account-deletion-requests", label: "Account deletions" },
   { href: "/reports", label: "Reports" },
   { href: "/settings", label: "Settings" },
 ];

@@ -828,3 +828,28 @@ export interface VisitReport {
   rows: VisitReportRow[];
   meta: PageMeta;
 }
+
+export type AccountDeletionStatus = "pending" | "approved" | "rejected";
+
+export type AccountDeletionUserStatus = "deletion_pending" | "inactive" | "active" | string;
+
+export interface AccountDeletionUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  position: string;
+  status: AccountDeletionUserStatus;
+}
+
+export interface AccountDeletionRequest {
+  id: string;
+  userId: string;
+  reason: string;
+  status: AccountDeletionStatus;
+  reviewedById: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  user: AccountDeletionUser | null;
+}

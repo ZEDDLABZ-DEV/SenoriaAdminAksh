@@ -49,6 +49,9 @@ import type {
   PageMeta,
   ServiceRequirement,
   UserAccount,
+  AccountDeletionRequest,
+  AccountDeletionStatus,
+  AccountDeletionUser,
   VisitReport,
   VisitReportAdjustment,
   VisitReportArrival,
@@ -1114,4 +1117,74 @@ export function parseVisitSeriesUpdateResult(body: unknown): VisitSeriesUpdateRe
 export function parseVisitSeriesEndResult(body: unknown): VisitSeriesEndResult {
   const data = asRecord(dataOf(body));
   return { series: parseVisitSeries(data?.series), removedCount: int(data?.removedCount) };
+}
+
+function parseAccountDeletionStatus(value: unknown): AccountDeletionStatus {
+  const raw = str(value).trim().toLowerCase();
+  if (raw === "approved") return "approved";
+  if (raw === "rejected") return "rejected";
+  return "pending";
+}
+
+function parseAccountDeletionUser(value: unknown): AccountDeletionUser | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = str(record.id);
+  if (!id) return null;
+  return {
+    id,
+    email: str(record.email),
+    firstName: str(record.firstName),
+    lastName: str(record.lastName),
+    phone: nullableStr(record.phone),
+    position: str(record.position),
+    status: str(record.status) || "deletion_pending",
+  };
+}
+
+export function parseAccountDeletionRequest(value: unknown): AccountDeletionRequest | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = str(record.id);
+  if (!id) return null;
+  return {
+    id,
+    userId: str(record.userId),
+    reason: str(record.reason),
+    status: parseAccountDeletionStatus(record.status),
+    reviewedById: nullableStr(record.reviewedById),
+    createdAt: str(record.createdAt),
+    resolvedAt: nullableStr(record.resolvedAt),
+    user: parseAccountDeletionUser(record.user),
+  };
+}
+
+export function parseAccountDeletionRequestPage(body: unknown): {
+  items: AccountDeletionRequest[];
+  meta: PageMeta;
+} {
+  const root = asRecord(body) ?? {};
+  const data = root.data;
+  if (Array.isArray(data)) {
+    return {
+      items: data
+        .map(parseAccountDeletionRequest)
+        .filter((item): item is AccountDeletionRequest => item !== null),
+      meta: readMeta(firstRecord(root.pagination, root.meta)),
+    };
+  }
+  const dataRecord = asRecord(data);
+  const list = dataRecord?.data ?? dataRecord?.items ?? dataRecord?.results ?? [];
+  return {
+    items: (Array.isArray(list) ? list : [])
+      .map(parseAccountDeletionRequest)
+      .filter((item): item is AccountDeletionRequest => item !== null),
+    meta: readLayeredMeta([
+      asRecord(dataRecord?.meta),
+      asRecord(dataRecord?.pagination),
+      dataRecord,
+      asRecord(root.meta),
+      asRecord(root.pagination),
+    ]),
+  };
 }
