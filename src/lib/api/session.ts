@@ -44,6 +44,15 @@ export function hasSession(): boolean {
   return getAccessToken().length > 0;
 }
 
+export function isSalesRole(role: string | null | undefined): boolean {
+  return (role ?? "").trim().toUpperCase() === "SALES";
+}
+
+/** Signed-in landing path. Sales accounts open the sales workspace. */
+export function portalHomePath(role: string | null | undefined): "/home" | "/today" {
+  return isSalesRole(role) ? "/today" : "/home";
+}
+
 export type TokenState = "ok" | "refresh" | "missing-expiry" | "signed-out";
 
 export function tokenState(now = Date.now()): TokenState {

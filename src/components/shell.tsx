@@ -5,38 +5,61 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { ConfirmDialog } from "@/components/ui";
+import { isSalesRole } from "@/lib/api/session";
 import { fullName } from "@/lib/format";
+import { isSalesWorkspacePath } from "@/lib/sales-portal";
 import { SCHEDULE_TEXT } from "@/lib/schedule";
 
-const links = [
+const adminLinks = [
   { href: "/home", label: "Home" },
   { href: "/clients", label: "Clients" },
   { href: "/schedule", label: SCHEDULE_TEXT.nav },
   { href: "/appointments", label: "Appointments" },
   { href: "/doctor-appointments", label: "Doctor appointments" },
   { href: "/caregivers", label: "Caregivers" },
+  { href: "/sales", label: "Sales executives" },
+  { href: "/today", label: "Sales workspace" },
   { href: "/account-deletion-requests", label: "Account deletions" },
   { href: "/reports", label: "Reports" },
   { href: "/settings", label: "Settings" },
 ];
 
+const workspaceLinks = [
+  { href: "/today", label: "Today" },
+  { href: "/leads", label: "Leads" },
+  { href: "/calls", label: "Calls" },
+  { href: "/calendar", label: "Calendar" },
+];
+
+const salesLinks = [...workspaceLinks, { href: "/profile", label: "Profile" }];
+
 export function Shell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const sales = isSalesRole(user?.role);
+  const workspace = isSalesWorkspacePath(pathname);
+  const links = sales
+    ? salesLinks
+    : workspace
+      ? [...workspaceLinks, { href: "/salespeople", label: "Sales executives" }, { href: "/home", label: "Admin home" }]
+      : adminLinks;
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
-  const name = fullName(user?.firstName, user?.lastName, user?.email || "Admin");
+  const name = fullName(user?.firstName, user?.lastName, user?.email || (sales ? "Sales" : "Admin"));
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
       <aside className="bg-ink text-paper lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
         <div className="px-5 py-6">
           <p className="font-display text-3xl leading-none text-white">Senoria</p>
-          <p className="mt-1 text-xs tracking-[0.18em] text-paper/70 uppercase">Admin portal</p>
+          <p className="mt-1 text-xs tracking-[0.18em] text-paper/70 uppercase">{sales || workspace ? "Sales portal" : "Admin portal"}</p>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-4 lg:block lg:space-y-1 lg:px-3">
           {links.map((link) => {
-            const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+            const active =
+              link.href === "/today" && !sales && !workspace
+                ? isSalesWorkspacePath(pathname)
+                : pathname === link.href || pathname.startsWith(`${link.href}/`);
             return (
               <Link
                 key={link.href}

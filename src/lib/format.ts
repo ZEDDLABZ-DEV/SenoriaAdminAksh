@@ -11,6 +11,15 @@ export function browserTimeZoneOffset(date = new Date()): string {
   return `${sign}${hours}:${mins}`;
 }
 
+export function browserTimeZone(): string {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof zone === "string" ? zone : "";
+  } catch {
+    return "";
+  }
+}
+
 export function fullName(
   firstName?: string | null,
   lastName?: string | null,
@@ -183,6 +192,25 @@ export function formatLocalDateTime(value: string | null | undefined): string {
     minute: "2-digit",
     hourCycle: "h23",
   }).format(date);
+}
+
+export function formatLocalTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
+/** Local `YYYY-MM-DD` and `HH:mm` become an ISO instant. Invalid parts return null. */
+export function localDateTimeToIso(date: string, time: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  const value = new Date(`${date}T${time}`);
+  if (Number.isNaN(value.getTime())) return null;
+  return value.toISOString();
 }
 
 export function careTypeLabel(category: string | null | undefined): string {

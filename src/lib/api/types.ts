@@ -238,6 +238,37 @@ export interface CreateCaregiverInput {
   phone: string;
 }
 
+export interface SalesRecord {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  email: string;
+  phone: string;
+  role: string;
+  status: string;
+}
+
+export interface CreateSalesInput {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  email: string;
+  password: string;
+  phone: string;
+}
+
+/** The signed-in sales person's own profile from GET /sales/dashboard. */
+export interface SalesDashboard {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  email: string;
+  phone: string;
+  role: string;
+}
+
 export interface AppointmentListItem {
   id: string;
   scheduledDate: string;
@@ -852,4 +883,219 @@ export interface AccountDeletionRequest {
   createdAt: string;
   resolvedAt: string | null;
   user: AccountDeletionUser | null;
+}
+
+export type LeadStage = "New" | "Contacted" | "Qualified" | "Visit booked" | "Won" | "Lost";
+export type LeadSource = "Facebook" | "Instagram" | "Phone" | "Referral";
+export type QueueFilter = "new" | "due" | "overdue" | "mine";
+export type NoteOutcome = "Connected" | "No answer" | "Voicemail" | "Booked";
+export type CallDirection = "Outbound" | "Inbound";
+export type CallResult = "Connected" | "No answer" | "Voicemail" | "Missed";
+export type MeetingKind = "Call" | "Visit";
+export type TimelineKind = "Lead" | "Call" | "Note" | "Meeting" | "Stage" | "Assignment";
+
+export interface LeadListItem {
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string | null;
+  source: LeadSource;
+  stage: LeadStage;
+  ownerId: string | null;
+  ownerName: string | null;
+  about: string | null;
+  lastTouchAt: string | null;
+  nextStep: string | null;
+  nextStepAt: string | null;
+  queues: QueueFilter[];
+  createdAt: string;
+}
+
+export interface LeadTimelineEvent {
+  id: string;
+  kind: TimelineKind;
+  text: string;
+  occurredAt: string;
+  actorId: string | null;
+  meta: Record<string, unknown> | null;
+}
+
+export interface LeadDetail extends LeadListItem {
+  updatedAt: string;
+  timeline: LeadTimelineEvent[];
+  meetingId: string | null;
+}
+
+export interface LeadQueueSummary {
+  new: number;
+  due: number;
+  overdue: number;
+  mine: number;
+}
+
+export interface LeadAssignmentState {
+  activeRepIds: string[];
+  nextOwnerId: string | null;
+  nextOwnerName: string | null;
+}
+
+export interface CreateLeadInput {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  source: LeadSource;
+  email?: string;
+  about?: string;
+  ownerId?: string;
+}
+
+export interface AddLeadNoteInput {
+  outcome: NoteOutcome;
+  text: string;
+  followUpDate?: string;
+  followUpTime?: string;
+  stage?: LeadStage;
+}
+
+export interface LeadListQuery {
+  page?: number;
+  pageSize?: number;
+  stage?: LeadStage;
+  ownerId?: string;
+  queue?: QueueFilter;
+  search?: string;
+}
+
+export interface CallListItem {
+  id: string;
+  when: string;
+  leadId: string | null;
+  name: string;
+  phone: string;
+  direction: CallDirection;
+  durationSeconds: number | null;
+  durationLabel: string | null;
+  result: CallResult;
+  recordingAvailable: boolean;
+  ownerId: string | null;
+  ownerName: string | null;
+}
+
+export interface CallDetail extends CallListItem {
+  startedAt: string;
+  endedAt: string | null;
+  recordingUrl: string | null;
+}
+
+export interface LogCallInput {
+  leadId?: string | null;
+  phone: string;
+  direction: CallDirection;
+  startedAt: string;
+  endedAt?: string | null;
+  durationSeconds?: number | null;
+  result: CallResult;
+  name?: string;
+}
+
+export interface CallListQuery {
+  page?: number;
+  pageSize?: number;
+  from?: string;
+  to?: string;
+  ownerId?: string;
+  leadId?: string;
+  result?: CallResult;
+  direction?: CallDirection;
+}
+
+export interface SalesMeeting {
+  id: string;
+  leadId: string | null;
+  ownerId: string;
+  title: string;
+  person: string;
+  kind: MeetingKind;
+  startAt: string;
+  endAt: string;
+}
+
+export interface CreateMeetingInput {
+  leadId: string;
+  title: string;
+  kind: MeetingKind;
+  startAt: string;
+  endAt: string;
+}
+
+export interface UpdateMeetingInput {
+  leadId?: string;
+  title?: string;
+  kind?: MeetingKind;
+  startAt?: string;
+  endAt?: string;
+}
+
+export interface MeetingListQuery {
+  from: string;
+  to: string;
+  ownerId?: string;
+}
+
+export interface SalespersonListItem {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  status: "active" | "inactive";
+  inRoundRobin: boolean;
+  assignedLeadCount: number;
+}
+
+export interface SalespersonEvent {
+  id: string;
+  occurredAt: string;
+  kind: string;
+  leadId: string | null;
+  leadName: string | null;
+  text: string;
+}
+
+export interface SalespersonDetail {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  status: "active" | "inactive";
+  stats: { open: number; won: number; lost: number; overdue: number };
+  currentLeads: LeadListItem[];
+  pastLeads: LeadListItem[];
+  events: SalespersonEvent[];
+}
+
+export interface IntegrationVendorStatus {
+  enabled: boolean;
+  configured: boolean;
+}
+
+export interface IntegrationsStatus {
+  meta: IntegrationVendorStatus;
+  ringcentral: IntegrationVendorStatus;
+  zoho: IntegrationVendorStatus;
+  outlook: IntegrationVendorStatus;
+}
+
+export interface StartLeadCallResult {
+  started: boolean;
+  reason: string | null;
+  callId: string | null;
+  sessionId: string | null;
+}
+
+export interface OutlookSyncResult {
+  synced: boolean;
+  reason: string | null;
 }

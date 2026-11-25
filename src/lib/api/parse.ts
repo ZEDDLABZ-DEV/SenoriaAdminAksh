@@ -37,6 +37,8 @@ import type {
   CarePlanTask,
   CaregiverRecord,
   ClientRecord,
+  SalesRecord,
+  SalesDashboard,
   DashboardStats,
   Diagnosis,
   DoctorAppointment,
@@ -52,6 +54,28 @@ import type {
   AccountDeletionRequest,
   AccountDeletionStatus,
   AccountDeletionUser,
+  CallDetail,
+  CallDirection,
+  CallListItem,
+  CallResult,
+  LeadAssignmentState,
+  LeadDetail,
+  LeadListItem,
+  LeadQueueSummary,
+  LeadSource,
+  LeadStage,
+  LeadTimelineEvent,
+  MeetingKind,
+  QueueFilter,
+  SalesMeeting,
+  SalespersonDetail,
+  SalespersonEvent,
+  SalespersonListItem,
+  IntegrationVendorStatus,
+  IntegrationsStatus,
+  OutlookSyncResult,
+  StartLeadCallResult,
+  TimelineKind,
   VisitReport,
   VisitReportAdjustment,
   VisitReportArrival,
@@ -480,6 +504,53 @@ export function parseCaregiver(value: unknown): CaregiverRecord | null {
     role: str(record.role),
     phone: str(record.phone),
     email: str(record.email),
+  };
+}
+
+export function parseSales(value: unknown): SalesRecord | null {
+  const record = asRecord(value);
+  if (!record || !str(record.id)) return null;
+  return {
+    id: str(record.id),
+    firstName: str(record.firstName),
+    lastName: str(record.lastName),
+    dateOfBirth: str(record.dateOfBirth),
+    email: str(record.email),
+    phone: str(record.phone),
+    role: str(record.role) || "SALES",
+    status: str(record.status),
+  };
+}
+
+export function parseSalesDashboard(body: unknown): SalesDashboard {
+  const root = asRecord(body) ?? {};
+  const sales = parseSales(asRecord(root.data) ?? root);
+  if (!sales) throw new Error("The profile could not be read.");
+  return {
+    id: sales.id,
+    firstName: sales.firstName,
+    lastName: sales.lastName,
+    dateOfBirth: sales.dateOfBirth,
+    email: sales.email,
+    phone: sales.phone,
+    role: sales.role || "SALES",
+  };
+}
+
+export function parseSalesPage(body: unknown): { items: SalesRecord[]; meta: PageMeta } {
+  const root = asRecord(body) ?? {};
+  const data = root.data;
+  if (Array.isArray(data)) {
+    return {
+      items: data.map(parseSales).filter((item): item is SalesRecord => item !== null),
+      meta: readMeta(asRecord(root.meta)),
+    };
+  }
+  const dataRecord = asRecord(data);
+  const list = dataRecord?.data ?? dataRecord?.items ?? dataRecord?.results ?? [];
+  return {
+    items: (Array.isArray(list) ? list : []).map(parseSales).filter((item): item is SalesRecord => item !== null),
+    meta: readMeta(asRecord(dataRecord?.meta) ?? asRecord(root.meta)),
   };
 }
 
@@ -1186,5 +1257,372 @@ export function parseAccountDeletionRequestPage(body: unknown): {
       asRecord(root.meta),
       asRecord(root.pagination),
     ]),
+  };
+}
+
+const LEAD_STAGES = ["New", "Contacted", "Qualified", "Visit booked", "Won", "Lost"] as const;
+const LEAD_SOURCES = ["Facebook", "Instagram", "Phone", "Referral"] as const;
+const QUEUE_FILTERS = ["new", "due", "overdue", "mine"] as const;
+const CALL_DIRECTIONS = ["Outbound", "Inbound"] as const;
+const CALL_RESULTS = ["Connected", "No answer", "Voicemail", "Missed"] as const;
+const MEETING_KINDS = ["Call", "Visit"] as const;
+const TIMELINE_KINDS = ["Lead", "Call", "Note", "Meeting", "Stage", "Assignment"] as const;
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
+  const text = str(value);
+  return (allowed as readonly string[]).includes(text) ? (text as T) : null;
+}
+
+function salesStatus(value: unknown): "active" | "inactive" {
+  return str(value) === "inactive" ? "inactive" : "active";
+}
+
+function unwrapData(body: unknown): unknown {
+  const root = asRecord(body);
+  if (root && "data" in root) return root.data;
+  return body;
+}
+
+function unwrapRows(body: unknown): unknown[] {
+  const data = unwrapData(body);
+  if (Array.isArray(data)) return data;
+  const record = asRecord(data);
+  const list = record?.data ?? record?.items ?? record?.results ?? [];
+  return Array.isArray(list) ? list : [];
+}
+
+export function parseLeadListItem(value: unknown): LeadListItem | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = str(record.id);
+  const stage = oneOf<LeadStage>(record.stage, LEAD_STAGES);
+  const source = oneOf<LeadSource>(record.source, LEAD_SOURCES);
+  if (!id || !stage || !source) return null;
+  const queues = Array.isArray(record.queues)
+    ? record.queues
+        .map((item) => oneOf<QueueFilter>(item, QUEUE_FILTERS))
+        .filter((item): item is QueueFilter => item !== null)
+    : [];
+  return {
+    id,
+    firstName: str(record.firstName),
+    lastName: str(record.lastName),
+    phone: str(record.phone),
+    email: nullableStr(record.email),
+    source,
+    stage,
+    ownerId: nullableStr(record.ownerId),
+    ownerName: nullableStr(record.ownerName),
+    about: nullableStr(record.about),
+    lastTouchAt: nullableStr(record.lastTouchAt),
+    nextStep: nullableStr(record.nextStep),
+    nextStepAt: nullableStr(record.nextStepAt),
+    queues,
+    createdAt: str(record.createdAt),
+  };
+}
+
+function parseLeadTimelineEvent(value: unknown): LeadTimelineEvent | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = str(record.id);
+  const kind = oneOf<TimelineKind>(record.kind, TIMELINE_KINDS);
+  if (!id || !kind) return null;
+  return {
+    id,
+    kind,
+    text: str(record.text),
+    occurredAt: str(record.occurredAt),
+    actorId: nullableStr(record.actorId),
+    meta: asRecord(record.meta),
+  };
+}
+
+export function parseLeadDetail(value: unknown): LeadDetail | null {
+  const item = parseLeadListItem(value);
+  const record = asRecord(value);
+  if (!item || !record) return null;
+  return {
+    ...item,
+    updatedAt: str(record.updatedAt),
+    timeline: listOf(record.timeline)
+      .map(parseLeadTimelineEvent)
+      .filter((event): event is LeadTimelineEvent => event !== null),
+    meetingId: nullableStr(record.meetingId),
+  };
+}
+
+export function parseLeadDetailEnvelope(body: unknown): LeadDetail | null {
+  return parseLeadDetail(unwrapData(body));
+}
+
+export function parseLeadPage(body: unknown): { items: LeadListItem[]; meta: PageMeta } {
+  const root = asRecord(body) ?? {};
+  const data = root.data;
+  if (Array.isArray(data)) {
+    return {
+      items: data.map(parseLeadListItem).filter((item): item is LeadListItem => item !== null),
+      meta: readMeta(firstRecord(root.pagination, root.meta)),
+    };
+  }
+  const dataRecord = asRecord(data);
+  const list = dataRecord?.data ?? dataRecord?.items ?? dataRecord?.results ?? [];
+  return {
+    items: (Array.isArray(list) ? list : [])
+      .map(parseLeadListItem)
+      .filter((item): item is LeadListItem => item !== null),
+    meta: readLayeredMeta([
+      asRecord(dataRecord?.meta),
+      asRecord(dataRecord?.pagination),
+      dataRecord,
+      asRecord(root.meta),
+      asRecord(root.pagination),
+    ]),
+  };
+}
+
+export function parseLeadQueueSummary(body: unknown): LeadQueueSummary {
+  const data = asRecord(unwrapData(body)) ?? {};
+  return {
+    new: int(data.new),
+    due: int(data.due),
+    overdue: int(data.overdue),
+    mine: int(data.mine),
+  };
+}
+
+export function parseLeadAssignmentState(body: unknown): LeadAssignmentState {
+  const data = asRecord(unwrapData(body)) ?? {};
+  return {
+    activeRepIds: stringList(data.activeRepIds),
+    nextOwnerId: nullableStr(data.nextOwnerId),
+    nextOwnerName: nullableStr(data.nextOwnerName),
+  };
+}
+
+function parseCallListItem(value: unknown): CallListItem | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = str(record.id);
+  const direction = oneOf<CallDirection>(record.direction, CALL_DIRECTIONS);
+  const result = oneOf<CallResult>(record.result, CALL_RESULTS);
+  if (!id || !direction || !result) return null;
+  return {
+    id,
+    when: str(record.when),
+    leadId: nullableStr(record.leadId),
+    name: str(record.name),
+    phone: str(record.phone),
+    direction,
+    durationSeconds: optionalInt(record.durationSeconds),
+    durationLabel: nullableStr(record.durationLabel),
+    result,
+    recordingAvailable: bool(record.recordingAvailable),
+    ownerId: nullableStr(record.ownerId),
+    ownerName: nullableStr(record.ownerName),
+  };
+}
+
+export function parseCallDetail(value: unknown): CallDetail | null {
+  const item = parseCallListItem(value);
+  const record = asRecord(value);
+  if (!item || !record) return null;
+  return {
+    ...item,
+    startedAt: str(record.startedAt) || item.when,
+    endedAt: nullableStr(record.endedAt),
+    recordingUrl: nullableStr(record.recordingUrl),
+  };
+}
+
+export function parseCallDetailEnvelope(body: unknown): CallDetail | null {
+  return parseCallDetail(unwrapData(body));
+}
+
+export function parseCallPage(body: unknown): { items: CallListItem[]; meta: PageMeta } {
+  const root = asRecord(body) ?? {};
+  const data = root.data;
+  if (Array.isArray(data)) {
+    return {
+      items: data.map(parseCallListItem).filter((item): item is CallListItem => item !== null),
+      meta: readMeta(firstRecord(root.pagination, root.meta)),
+    };
+  }
+  const dataRecord = asRecord(data);
+  const list = dataRecord?.data ?? dataRecord?.items ?? dataRecord?.results ?? [];
+  return {
+    items: (Array.isArray(list) ? list : [])
+      .map(parseCallListItem)
+      .filter((item): item is CallListItem => item !== null),
+    meta: readLayeredMeta([
+      asRecord(dataRecord?.meta),
+      asRecord(dataRecord?.pagination),
+      dataRecord,
+      asRecord(root.meta),
+      asRecord(root.pagination),
+    ]),
+  };
+}
+
+export function parseSalesMeeting(value: unknown): SalesMeeting | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = str(record.id);
+  const kind = oneOf<MeetingKind>(record.kind, MEETING_KINDS);
+  const ownerId = str(record.ownerId);
+  if (!id || !kind || !ownerId) return null;
+  return {
+    id,
+    leadId: nullableStr(record.leadId),
+    ownerId,
+    title: str(record.title),
+    person: str(record.person),
+    kind,
+    startAt: str(record.startAt),
+    endAt: str(record.endAt),
+  };
+}
+
+export function parseSalesMeetingEnvelope(body: unknown): SalesMeeting | null {
+  return parseSalesMeeting(unwrapData(body));
+}
+
+export function parseSalesMeetings(body: unknown): SalesMeeting[] {
+  return unwrapRows(body)
+    .map(parseSalesMeeting)
+    .filter((item): item is SalesMeeting => item !== null);
+}
+
+export function parseSalespersonListItem(value: unknown): SalespersonListItem | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = str(record.id);
+  if (!id) return null;
+  const status = salesStatus(record.status);
+  return {
+    id,
+    firstName: str(record.firstName),
+    lastName: str(record.lastName),
+    email: str(record.email),
+    phone: str(record.phone),
+    status,
+    inRoundRobin: typeof record.inRoundRobin === "boolean" ? record.inRoundRobin : status === "active",
+    assignedLeadCount: int(record.assignedLeadCount),
+  };
+}
+
+export function parseSalespeople(body: unknown): SalespersonListItem[] {
+  return unwrapRows(body)
+    .map(parseSalespersonListItem)
+    .filter((item): item is SalespersonListItem => item !== null);
+}
+
+function parseSalespersonEvent(value: unknown): SalespersonEvent | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = str(record.id);
+  if (!id) return null;
+  return {
+    id,
+    occurredAt: str(record.occurredAt),
+    kind: str(record.kind),
+    leadId: nullableStr(record.leadId),
+    leadName: nullableStr(record.leadName),
+    text: str(record.text),
+  };
+}
+
+export function parseSalespersonDetail(body: unknown): SalespersonDetail | null {
+  const record = asRecord(unwrapData(body));
+  if (!record) return null;
+  const id = str(record.id);
+  if (!id) return null;
+  const stats = asRecord(record.stats) ?? {};
+  return {
+    id,
+    firstName: str(record.firstName),
+    lastName: str(record.lastName),
+    email: str(record.email),
+    phone: str(record.phone),
+    status: salesStatus(record.status),
+    stats: {
+      open: int(stats.open),
+      won: int(stats.won),
+      lost: int(stats.lost),
+      overdue: int(stats.overdue),
+    },
+    currentLeads: listOf(record.currentLeads)
+      .map(parseLeadListItem)
+      .filter((item): item is LeadListItem => item !== null),
+    pastLeads: listOf(record.pastLeads)
+      .map(parseLeadListItem)
+      .filter((item): item is LeadListItem => item !== null),
+    events: listOf(record.events)
+      .map(parseSalespersonEvent)
+      .filter((item): item is SalespersonEvent => item !== null),
+  };
+}
+
+function integrationPayload(body: unknown): Record<string, unknown> | null {
+  const first = asRecord(unwrapData(body));
+  if (!first) return null;
+  const nested = asRecord(first.data);
+  const peeled =
+    nested &&
+    !("started" in first) &&
+    !("synced" in first) &&
+    !("ringcentral" in first) &&
+    !("meta" in first) &&
+    !("outlook" in first) &&
+    !("zoho" in first);
+  return peeled ? nested : first;
+}
+
+function parseVendorStatus(value: unknown): IntegrationVendorStatus {
+  const record = asRecord(value) ?? {};
+  return {
+    enabled: bool(record.enabled),
+    configured: bool(record.configured),
+  };
+}
+
+function nestedId(value: unknown): string | null {
+  return nullableStr(asRecord(value)?.id);
+}
+
+export function parseIntegrationsStatus(body: unknown): IntegrationsStatus {
+  const data = integrationPayload(body);
+  if (!data || !("meta" in data || "ringcentral" in data || "zoho" in data || "outlook" in data)) {
+    throw new Error("Integration status could not be read.");
+  }
+  return {
+    meta: parseVendorStatus(data.meta),
+    ringcentral: parseVendorStatus(data.ringcentral),
+    zoho: parseVendorStatus(data.zoho),
+    outlook: parseVendorStatus(data.outlook),
+  };
+}
+
+export function parseStartLeadCall(body: unknown): StartLeadCallResult {
+  const data = integrationPayload(body);
+  if (!data || typeof data.started !== "boolean") {
+    throw new Error("The call response could not be read.");
+  }
+  return {
+    started: data.started,
+    reason: nullableStr(data.reason),
+    callId: nullableStr(data.callId) ?? nullableStr(data.call) ?? nestedId(data.call) ?? (data.started ? nullableStr(data.id) : null),
+    sessionId: nullableStr(data.sessionId) ?? nullableStr(data.session) ?? nestedId(data.session),
+  };
+}
+
+export function parseOutlookSync(body: unknown): OutlookSyncResult {
+  const data = integrationPayload(body);
+  if (!data || typeof data.synced !== "boolean") {
+    throw new Error("The Outlook response could not be read.");
+  }
+  return {
+    synced: data.synced,
+    reason: nullableStr(data.reason),
   };
 }

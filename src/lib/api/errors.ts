@@ -125,6 +125,19 @@ export function errorMessage(error: unknown): string {
   return "Something went wrong. Try again.";
 }
 
+/** Message plus the first validation line on each field. A 403 keeps the server message. */
+export function describeApiError(error: unknown): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return error.message || "You are not allowed to perform this action.";
+  }
+  if (error instanceof ApiError && Object.keys(error.fields).length > 0) {
+    const details = Object.values(error.fields).filter(Boolean).join(" ");
+    if (!details || error.message.includes(details)) return error.message;
+    return `${error.message} ${details}`;
+  }
+  return errorMessage(error);
+}
+
 export function fieldErrors(error: unknown): Record<string, string> {
   return error instanceof ApiError ? error.fields : {};
 }

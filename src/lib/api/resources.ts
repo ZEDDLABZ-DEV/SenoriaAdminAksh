@@ -22,6 +22,22 @@ import {
   parseLogin,
   parseNamedEnvelope,
   parseNamedList,
+  parseCallDetailEnvelope,
+  parseCallPage,
+  parseLeadAssignmentState,
+  parseLeadDetailEnvelope,
+  parseLeadPage,
+  parseLeadQueueSummary,
+  parseIntegrationsStatus,
+  parseOutlookSync,
+  parseStartLeadCall,
+  parseSales,
+  parseSalesDashboard,
+  parseSalesMeetingEnvelope,
+  parseSalesMeetings,
+  parseSalesPage,
+  parseSalespeople,
+  parseSalespersonDetail,
   parseScheduleRange,
   parseScheduleSummary,
   parseTimeOffCreateResult,
@@ -48,6 +64,7 @@ import type {
   CaregiverRecord,
   ClientRecord,
   CreateCaregiverInput,
+  CreateSalesInput,
   ClientUpdate,
   CreateAppointmentInput,
   CreateAppointmentResult,
@@ -58,8 +75,30 @@ import type {
   DashboardStats,
   DoctorAppointment,
   Hazard,
+  AddLeadNoteInput,
+  CallDetail,
+  CallListItem,
+  CallListQuery,
+  CreateLeadInput,
+  CreateMeetingInput,
+  LeadAssignmentState,
+  LeadDetail,
+  LeadListItem,
+  LeadListQuery,
+  LeadQueueSummary,
+  IntegrationsStatus,
+  LogCallInput,
+  OutlookSyncResult,
+  StartLeadCallResult,
+  MeetingListQuery,
   NamedCatalogItem,
   PageMeta,
+  SalesMeeting,
+  SalesRecord,
+  SalesDashboard,
+  SalespersonDetail,
+  SalespersonListItem,
+  UpdateMeetingInput,
   ScheduleRange,
   ScheduleSummary,
   TimeOff,
@@ -77,6 +116,7 @@ import type {
   VisitSeriesQuery,
   VisitSeriesUpdateResult,
 } from "@/lib/api/types";
+import { browserTimeZone, browserTimeZoneOffset } from "@/lib/format";
 import { SCHEDULE_HEADERS } from "@/lib/schedule";
 import { VISIT_REPORT_HEADERS, visitReportQuery, type VisitReportRequest } from "@/lib/visit-report";
 
@@ -112,11 +152,12 @@ export async function login(email: string, password: string): Promise<
     if (result.expiresIn <= 0) {
       return { ok: false, reason: "expired", message: "Sign-in did not start a session. Please try again.", fields: {} };
     }
-    if (result.user.role.toUpperCase() !== "ADMIN") {
+    const role = result.user.role.toUpperCase();
+    if (role !== "ADMIN" && role !== "SALES") {
       return {
         ok: false,
         reason: "denied",
-        message: "Access denied. Only admin accounts can sign in to this app.",
+        message: "Access denied. This account cannot sign in here.",
         fields: {},
       };
     }
@@ -383,6 +424,52 @@ export async function createCaregiver(input: CreateCaregiverInput): Promise<stri
 
 export async function deactivateCaregiver(id: string): Promise<void> {
   await apiRequest(`/users/caregivers/${encodeURIComponent(id)}/deactivate`, { method: "POST" });
+}
+
+export async function getSalesDashboard(): Promise<SalesDashboard> {
+  return parseSalesDashboard(await apiRequest("/sales/dashboard"));
+}
+
+export type SalesAccountStatus = "active" | "inactive" | "all";
+
+/** `all` returns active and inactive accounts. Inactive accounts still cannot sign in. */
+export async function listAllSales(status: SalesAccountStatus = "all"): Promise<SalesRecord[]> {
+  return collectPages((page) =>
+    apiRequest("/users/sales", { query: { page, pageSize: LIST_PAGE_SIZE, status } }).then(parseSalesPage),
+  );
+}
+
+export async function createSales(input: CreateSalesInput): Promise<string | null> {
+  const body = await apiRequest("/users/sales", { method: "POST", body: input });
+  return parseSales(asRecord(asRecord(body)?.data))?.id || extractId(body);
+}
+
+export async function deactivateSales(id: string): Promise<void> {
+  await apiRequest(`/users/sales/${encodeURIComponent(id)}/deactivate`, { method: "POST" });
+}
+
+export async function changeSalesPassword(
+  id: string,
+  password: string,
+): Promise<{ message: string; sales: SalesRecord | null }> {
+  const body = await apiRequest(`/users/sales/${encodeURIComponent(id)}/password`, {
+    method: "POST",
+    body: { password },
+  });
+  const root = asRecord(body);
+  const message =
+    root && typeof root.message === "string" && root.message.trim() ? root.message.trim() : "Password updated";
+  const sales = parseSales(asRecord(root?.data));
+  return { message, sales: sales?.id ? sales : null };
+}
+
+export async function revokeSalesSessions(id: string): Promise<{ message: string; sales: SalesRecord | null }> {
+  const body = await apiRequest(`/users/sales/${encodeURIComponent(id)}/sessions/revoke`, { method: "POST" });
+  const root = asRecord(body);
+  const message =
+    root && typeof root.message === "string" && root.message.trim() ? root.message.trim() : "Session revoked";
+  const sales = parseSales(asRecord(root?.data));
+  return { message, sales: sales?.id ? sales : null };
 }
 
 export async function changeCaregiverPassword(
@@ -759,4 +846,197 @@ export async function approveAccountDeletionRequest(id: string): Promise<void> {
 /** Restores the account so the user can sign in again. */
 export async function rejectAccountDeletionRequest(id: string): Promise<void> {
   await apiRequest(`/account-deletion-requests/${encodeURIComponent(id)}/reject`, { method: "POST" });
+}
+
+export const SALES_LIST_PAGE_SIZE = 100;
+
+function salesHeaders(): Record<string, string> {
+  const zone = browserTimeZone();
+  return zone ? { "X-Timezone": zone } : {};
+}
+
+function salesOffset(): string {
+  return browserTimeZoneOffset();
+}
+
+function requireLead(body: unknown): LeadDetail {
+  const lead = parseLeadDetailEnvelope(body);
+  if (!lead) throw new Error("The lead could not be read.");
+  return lead;
+}
+
+function requireCall(body: unknown): CallDetail {
+  const call = parseCallDetailEnvelope(body);
+  if (!call) throw new Error("The call could not be read.");
+  return call;
+}
+
+function requireMeeting(body: unknown): SalesMeeting {
+  const meeting = parseSalesMeetingEnvelope(body);
+  if (!meeting) throw new Error("The meeting could not be read.");
+  return meeting;
+}
+
+export async function listLeads(query: LeadListQuery = {}): Promise<{ items: LeadListItem[]; meta: PageMeta }> {
+  const body = await apiRequest("/leads", {
+    headers: salesHeaders(),
+    query: {
+      page: query.page,
+      pageSize: query.pageSize,
+      stage: query.stage,
+      ownerId: query.ownerId,
+      queue: query.queue,
+      search: query.search?.trim() || undefined,
+      timeZoneOffset: salesOffset(),
+    },
+  });
+  return parseLeadPage(body);
+}
+
+export async function getLead(id: string): Promise<LeadDetail> {
+  const body = await apiRequest(`/leads/${encodeURIComponent(id)}`, { headers: salesHeaders() });
+  return requireLead(body);
+}
+
+export async function createLead(input: CreateLeadInput): Promise<LeadDetail> {
+  const body = await apiRequest("/leads", { method: "POST", headers: salesHeaders(), body: input });
+  return requireLead(body);
+}
+
+export async function updateLeadStage(id: string, stage: LeadDetail["stage"]): Promise<LeadDetail> {
+  const body = await apiRequest(`/leads/${encodeURIComponent(id)}/stage`, {
+    method: "PATCH",
+    headers: salesHeaders(),
+    body: { stage },
+  });
+  return requireLead(body);
+}
+
+export async function assignLead(id: string, ownerId: string): Promise<LeadDetail> {
+  const body = await apiRequest(`/leads/${encodeURIComponent(id)}/assign`, {
+    method: "POST",
+    headers: salesHeaders(),
+    body: { ownerId },
+  });
+  return requireLead(body);
+}
+
+export async function addLeadNote(id: string, input: AddLeadNoteInput): Promise<LeadDetail> {
+  const body = await apiRequest(`/leads/${encodeURIComponent(id)}/notes`, {
+    method: "POST",
+    headers: salesHeaders(),
+    query: { timeZoneOffset: salesOffset() },
+    body: input,
+  });
+  return requireLead(body);
+}
+
+export async function getLeadQueueSummary(ownerId?: string): Promise<LeadQueueSummary> {
+  const body = await apiRequest("/leads/queues/summary", {
+    headers: salesHeaders(),
+    query: { timeZoneOffset: salesOffset(), ownerId },
+  });
+  return parseLeadQueueSummary(body);
+}
+
+export async function getLeadAssignmentState(): Promise<LeadAssignmentState> {
+  const body = await apiRequest("/sales/assignment-state", { headers: salesHeaders() });
+  return parseLeadAssignmentState(body);
+}
+
+export async function listCalls(query: CallListQuery = {}): Promise<{ items: CallListItem[]; meta: PageMeta }> {
+  const body = await apiRequest("/calls", {
+    headers: salesHeaders(),
+    query: { ...query, timeZoneOffset: salesOffset() },
+  });
+  return parseCallPage(body);
+}
+
+export async function getCall(id: string): Promise<CallDetail> {
+  const body = await apiRequest(`/calls/${encodeURIComponent(id)}`, { headers: salesHeaders() });
+  return requireCall(body);
+}
+
+export async function logCall(input: LogCallInput): Promise<CallDetail> {
+  const body = await apiRequest("/calls", { method: "POST", headers: salesHeaders(), body: input });
+  return requireCall(body);
+}
+
+export async function listMeetings(query: MeetingListQuery): Promise<SalesMeeting[]> {
+  const body = await apiRequest("/sales/meetings", {
+    headers: salesHeaders(),
+    query: {
+      from: query.from,
+      to: query.to,
+      ownerId: query.ownerId,
+      timeZoneOffset: salesOffset(),
+    },
+  });
+  return parseSalesMeetings(body);
+}
+
+export async function createMeeting(input: CreateMeetingInput): Promise<SalesMeeting> {
+  const body = await apiRequest("/sales/meetings", { method: "POST", headers: salesHeaders(), body: input });
+  return requireMeeting(body);
+}
+
+export async function updateMeeting(id: string, input: UpdateMeetingInput): Promise<SalesMeeting> {
+  const body = await apiRequest(`/sales/meetings/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: salesHeaders(),
+    body: input,
+  });
+  return requireMeeting(body);
+}
+
+export async function deleteMeeting(id: string): Promise<void> {
+  await apiRequest(`/sales/meetings/${encodeURIComponent(id)}`, { method: "DELETE", headers: salesHeaders() });
+}
+
+export async function listSalespeople(status: SalesAccountStatus = "all"): Promise<SalespersonListItem[]> {
+  const body = await apiRequest("/salespeople", { headers: salesHeaders(), query: { status } });
+  return parseSalespeople(body);
+}
+
+export async function getSalesperson(id: string): Promise<SalespersonDetail> {
+  const body = await apiRequest(`/salespeople/${encodeURIComponent(id)}`, {
+    headers: salesHeaders(),
+    query: { timeZoneOffset: salesOffset() },
+  });
+  const person = parseSalespersonDetail(body);
+  if (!person) throw new Error("The sales executive could not be read.");
+  return person;
+}
+
+export async function getIntegrationsStatus(): Promise<IntegrationsStatus> {
+  const body = await apiRequest("/integrations/status", {
+    headers: salesHeaders(),
+    query: { timeZoneOffset: salesOffset() },
+  });
+  return parseIntegrationsStatus(body);
+}
+
+export async function startLeadCall(leadId: string): Promise<StartLeadCallResult> {
+  const body = await apiRequest(`/leads/${encodeURIComponent(leadId)}/calls/start`, {
+    method: "POST",
+    headers: salesHeaders(),
+    query: { timeZoneOffset: salesOffset() },
+  });
+  return parseStartLeadCall(body);
+}
+
+export async function pushMeetingToOutlook(meetingId: string): Promise<OutlookSyncResult> {
+  const body = await apiRequest(`/sales/meetings/${encodeURIComponent(meetingId)}/outlook`, {
+    method: "POST",
+    headers: salesHeaders(),
+    query: { timeZoneOffset: salesOffset() },
+  });
+  return parseOutlookSync(body);
+}
+
+export async function getSalesUser(id: string): Promise<SalesRecord> {
+  const body = await apiRequest(`/users/sales/${encodeURIComponent(id)}`, { headers: salesHeaders() });
+  const sales = parseSales(asRecord(asRecord(body)?.data));
+  if (!sales) throw new Error("The sales person could not be read.");
+  return sales;
 }

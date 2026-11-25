@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { Alert, Button, Field, TextInput } from "@/components/ui";
 import { login } from "@/lib/api/resources";
-import { consumeFlash, hasSession, resetSessionEndGuard } from "@/lib/api/session";
+import { consumeFlash, getStoredUser, hasSession, portalHomePath, resetSessionEndGuard } from "@/lib/api/session";
 import { EMAIL_PATTERN } from "@/lib/format";
 
 export default function LoginPage() {
@@ -23,7 +23,7 @@ export default function LoginPage() {
   useEffect(() => {
     resetSessionEndGuard();
     setFlash(consumeFlash());
-    if (hasSession()) router.replace("/home");
+    if (hasSession()) router.replace(portalHomePath(getStoredUser()?.role));
   }, [router]);
 
   async function onSubmit(event: FormEvent) {
@@ -44,7 +44,7 @@ export default function LoginPage() {
       return;
     }
     refreshUser();
-    router.replace("/home");
+    router.replace(portalHomePath(getStoredUser()?.role));
   }
 
   return (
@@ -54,13 +54,15 @@ export default function LoginPage() {
           <p className="text-xs font-semibold tracking-[0.2em] text-paper/60 uppercase">Senoria Seniors</p>
           <h1 className="font-display mt-6 max-w-md text-6xl leading-tight text-white">The office desk for client care.</h1>
         </div>
-        <p className="max-w-sm text-sm text-paper/70">Clients, care plans, visits, and caregivers. One administrator account.</p>
+        <p className="max-w-sm text-sm text-paper/70">
+          Clients, care plans, visits, and caregivers. Sales accounts open their workspace.
+        </p>
       </section>
       <section className="flex items-center justify-center px-6 py-16">
         <form onSubmit={onSubmit} className="w-full max-w-md" noValidate>
-          <p className="text-xs font-semibold tracking-[0.16em] text-gold uppercase">Admin portal</p>
+          <p className="text-xs font-semibold tracking-[0.16em] text-gold uppercase">Senoria</p>
           <h2 className="font-display mt-2 text-4xl">Sign in</h2>
-          <p className="mt-2 text-sm text-muted">Use the administrator email and password.</p>
+          <p className="mt-2 text-sm text-muted">Use your email and password.</p>
           <div className="mt-6 space-y-4">
             {flash ? <Alert tone="info">{flash}</Alert> : null}
             {error ? <Alert>{error}</Alert> : null}
